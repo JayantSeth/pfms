@@ -1,0 +1,34 @@
+nodes:
+  - name: "localhost"
+    type: "linux"
+    ip: "127.0.0.1"
+    username: ${LOCAL_USER}
+    password: ${LOCAL_PASS}
+    ssh_port: "22"
+    dest_ips:
+      - "172.18.0.101"
+      - "172.18.0.102"
+      - "8.8.8.8"
+      - "4.4.2.2"
+  - name: "Arista_SW"
+    type: "arista_eos"
+    ip: "172.18.0.101"
+    username: ${ARISTA_USER}
+    password: ${ARISTA_PASS}
+    ssh_port: "22"
+    dest_ips:
+      - "172.18.0.1"
+      - "172.18.0.102"
+      - "8.8.8.8"
+      - "4.4.2.2"
+  - name: "Cisco_RTR"
+    type: "cisco_ios"
+    ip: "172.18.0.102"
+    username: ${CISCO_USER}
+    password: ${CISCO_PASS}
+    ssh_port: "22"
+    dest_ips:
+      - "172.18.0.1"
+      - "172.18.0.101"
+      - "8.8.8.8"
+      - "4.4.2.2"

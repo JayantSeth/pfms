@@ -12,10 +12,13 @@ import (
 )
 
 type Node struct {
-	IpAddress string
-	Username string
-	Password string
-	Port string
+	Name string `yaml:"name"`
+	Type string `yaml:"type"`
+	IpAddress string `yaml:"ip"`
+	Username string	`yaml:"username"`
+	Password string	`yaml:"password"`
+	Port string	`yaml:"ssh_port"`
+	DestIps []string `yaml:"dest_ips"`
 	Result map[string]bool
 }
 
@@ -83,7 +86,8 @@ func (n Node) ExecuteCommands(commands []string) string {
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			output += scanner.Text()
+			output_now := scanner.Text()
+			output += output_now
 		}
 	}()
 
@@ -105,7 +109,7 @@ func (n Node) ExecuteCommands(commands []string) string {
 			break
 		}
 		writer.Flush()
-		time.Sleep(500 * time.Millisecond) // Give time for output to appear
+		time.Sleep(6 * time.Second)
 	}
 
 	// Close stdin to signal end of input
@@ -173,4 +177,46 @@ func (a *Arista) DoPing(dstIps []string) {
 	}
 	output := a.ExecuteCommands(commands)
 	a.ExtractPingResult(dstIps, output)
+}
+
+type Cisco struct {
+	Node
+}
+
+func (c *Cisco) DoPing(dstIps []string) {
+	commands := []string{}
+	for _, ip := range dstIps {
+		commands = append(commands, fmt.Sprintf("ping %s", ip))
+	}
+	output := c.ExecuteCommands(commands)
+	c.ExtractPingResult(dstIps, output)
+}
+
+
+func (c *Cisco) ExtractPingResult(dstIps []string, output string) {
+	data := strings.Split(output, "Echos")
+	ipRegex := regexp.MustCompile(`((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9]),`)
+	pingResultRegex := regexp.MustCompile(`(\d{1,3})\spercent\s\(`)
+	resultMap := make(map[string]bool)
+	for _, ip := range dstIps {
+		resultMap[ip] = false
+	}
+	for _, data := range data {
+		ip := ipRegex.FindString(data)
+		if len(ip) == 0 {
+			continue
+		}
+		ip = ip[:len(ip)-1]
+		pingResult := pingResultRegex.FindStringSubmatch(data)
+		if len(pingResult) == 0 {
+			continue
+		}
+		// fmt.Printf("|%s|\n%s", pingResult, ip)
+		if pingResult[1] == "0" {
+			resultMap[ip] = false
+		} else {
+			resultMap[ip] = true
+		}
+	}
+	c.Result = resultMap
 }
