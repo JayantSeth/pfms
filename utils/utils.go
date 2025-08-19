@@ -21,7 +21,6 @@ type Node struct {
 	Password  string   `yaml:"password"`
 	Port      string   `yaml:"ssh_port"`
 	DestIps   []string `yaml:"dest_ips"`
-	Result    map[string]bool
 }
 
 func (n Node) ExecuteCommands(commands []string, readWait int) (string, error) {
@@ -135,7 +134,7 @@ type Operations interface {
 }
 
 type Linux struct {
-	Node *Node
+	Node Node
 }
 
 func (l Linux) GetSourceIp() string {
@@ -178,7 +177,7 @@ func DoMultiplePing(ons []Operations) map[string]map[string]bool {
 }
 
 
-func (n *Node) ExtractPingResult(output string) map[string]bool {
+func (n Node) ExtractPingResult(output string) map[string]bool {
 	data := strings.Split(output, "PING")
 	ipRegex := regexp.MustCompile(`((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])`)
 	pingResultRegex := regexp.MustCompile(`(\d{1,3})%\spacket\sloss,`)
@@ -201,7 +200,7 @@ func (n *Node) ExtractPingResult(output string) map[string]bool {
 	return resultMap
 }
 
-func (l *Linux) DoPing() (map[string]bool, error) {
+func (l Linux) DoPing() (map[string]bool, error) {
 	commands := []string{}
 	for _, ip := range l.Node.DestIps {
 		commands = append(commands, fmt.Sprintf("ping %s -c 3", ip))
@@ -216,14 +215,14 @@ func (l *Linux) DoPing() (map[string]bool, error) {
 }
 
 type Arista struct {
-	Node *Node
+	Node Node
 }
 
 func (a Arista) GetSourceIp() string {
 	return a.Node.IpAddress
 }
 
-func (a *Arista) DoPing() (map[string]bool, error) {
+func (a Arista) DoPing() (map[string]bool, error) {
 	commands := []string{"en"}
 	for _, ip := range a.Node.DestIps {
 		commands = append(commands, fmt.Sprintf("ping %s repeat 3", ip))
@@ -237,14 +236,14 @@ func (a *Arista) DoPing() (map[string]bool, error) {
 }
 
 type Cisco struct {
-	Node *Node
+	Node Node
 }
 
 func (c Cisco) GetSourceIp() string {
 	return c.Node.IpAddress
 }
 
-func (c *Cisco) DoPing() (map[string]bool, error) {
+func (c Cisco) DoPing() (map[string]bool, error) {
 	commands := []string{}
 	for _, ip := range c.Node.DestIps {
 		commands = append(commands, fmt.Sprintf("ping %s timeout 1 r 3", ip))
@@ -257,7 +256,7 @@ func (c *Cisco) DoPing() (map[string]bool, error) {
 	return c.ExtractPingResult(output), nil
 }
 
-func (c *Cisco) ExtractPingResult(output string) map[string]bool {
+func (c Cisco) ExtractPingResult(output string) map[string]bool {
 	data := strings.Split(output, "Echos")
 	ipRegex := regexp.MustCompile(`((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9]),`)
 	pingResultRegex := regexp.MustCompile(`(\d{1,3})\spercent\s\(`)

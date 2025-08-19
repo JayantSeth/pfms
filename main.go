@@ -43,16 +43,16 @@ func main() {
 	for _, n := range data.Nodes {
 		switch n.Type {
 		case "linux":
-			linux := &utils.Linux{Node: &n}
+			linux := utils.Linux{Node: n}
 			ops = append(ops, linux)
 		case "arista_eos":
-			arista := &utils.Arista{Node: &n}
+			arista := utils.Arista{Node: n}
 			ops = append(ops, arista)
 		case "cisco_ios":
-			cisco := &utils.Cisco{Node: &n}
+			cisco := utils.Cisco{Node: n}
 			ops = append(ops, cisco)
 		default:
-			linux := &utils.Linux{Node: &n}
+			linux := utils.Linux{Node: n}
 			ops = append(ops, linux)
 		}
 	}
