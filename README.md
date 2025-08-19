@@ -20,3 +20,6 @@ All you need to do it enter the data in data.yaml and run the app
 1. Linux
 2. Arista EOS
 3. Cisco IOS
+
+## Prerequisites
+1. Go lang version 1.20+
