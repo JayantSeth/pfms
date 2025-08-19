@@ -6,20 +6,21 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
 type Node struct {
-	Name string `yaml:"name"`
-	Type string `yaml:"type"`
-	IpAddress string `yaml:"ip"`
-	Username string	`yaml:"username"`
-	Password string	`yaml:"password"`
-	Port string	`yaml:"ssh_port"`
-	DestIps []string `yaml:"dest_ips"`
-	Result map[string]bool
+	Name      string   `yaml:"name"`
+	Type      string   `yaml:"type"`
+	IpAddress string   `yaml:"ip"`
+	Username  string   `yaml:"username"`
+	Password  string   `yaml:"password"`
+	Port      string   `yaml:"ssh_port"`
+	DestIps   []string `yaml:"dest_ips"`
+	Result    map[string]bool
 }
 
 func (n Node) ExecuteCommands(commands []string) string {
@@ -43,13 +44,13 @@ func (n Node) ExecuteCommands(commands []string) string {
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Config: ssh.Config{
-			Ciphers: Ciphers,
+			Ciphers:      Ciphers,
 			KeyExchanges: KeyExchanges,
-			MACs: Macs,
+			MACs:         Macs,
 		},
 	}
 
-	client, err := ssh.Dial("tcp", n.IpAddress + ":" + n.Port, config)
+	client, err := ssh.Dial("tcp", n.IpAddress+":"+n.Port, config)
 	if err != nil {
 		msg := fmt.Sprintf("Failed to connect to host: %v on port 22, error: %v, Username: %v, Password: %v", n.IpAddress, err, n.Username, n.Password)
 		return msg
@@ -116,21 +117,69 @@ func (n Node) ExecuteCommands(commands []string) string {
 	stdin.Close()
 
 	// Wait for the session to finish (optional, depending on your needs)
-	session.Wait()	
+	session.Wait()
 	return output
 }
 
+func (n Node) GetSourceIp() string {
+	return n.IpAddress
+}
+
+func (n Node) GetDestIps() []string {
+	return n.DestIps
+}
 
 type Operations interface {
-	DoPing() string
+	DoPing(dstIps []string) map[string]bool
+	GetSourceIp() string
+	GetDestIps() []string
 }
-
 
 type Linux struct {
-	Node
+	Node *Node
 }
 
-func (n *Node) ExtractPingResult(dstIps []string, output string) {
+func (l Linux) GetDestIps() []string {
+	return l.Node.DestIps
+}
+
+func (l Linux) GetSourceIp() string {
+	return l.Node.IpAddress
+}
+
+func DoPingCh (o Operations, dstIps []string, ch chan Result, wg *sync.WaitGroup) {
+	defer wg.Done()
+	result := o.DoPing(dstIps)
+	ch <- Result{IpAddress: o.GetSourceIp(), Result: result}	
+}
+
+type Result struct {
+	IpAddress string
+	Result map[string]bool
+}
+
+func DoMultiplePing(ons []Operations) map[string]map[string]bool {
+	ch := make(chan Result)
+	var wg sync.WaitGroup
+	for _, o := range ons {
+		wg.Add(1)
+		go DoPingCh(o, o.GetDestIps(), ch, &wg)
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	result := make(map[string]map[string]bool)
+	for r := range ch {
+		result[r.IpAddress] = r.Result
+	}
+	return result
+}
+
+
+func (n *Node) ExtractPingResult(dstIps []string, output string) map[string]bool {
 	data := strings.Split(output, "PING")
 	ipRegex := regexp.MustCompile(`((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])`)
 	pingResultRegex := regexp.MustCompile(`(\d{1,3})%\spacket\sloss,`)
@@ -144,56 +193,68 @@ func (n *Node) ExtractPingResult(dstIps []string, output string) {
 		if len(pingResult) == 0 {
 			continue
 		}
-		// fmt.Printf("|%s|\n%s", pingResult, ip)
 		if pingResult[1] == "0" {
 			resultMap[ip] = true
 		} else {
 			resultMap[ip] = false
 		}
 	}
-	n.Result = resultMap
+	return resultMap
 }
 
-
-func (l *Linux) DoPing(dstIps []string) {
+func (l *Linux) DoPing(dstIps []string) map[string]bool {
 	commands := []string{}
 	for _, ip := range dstIps {
 		commands = append(commands, fmt.Sprintf("ping %s -c 3", ip))
 	}
-	output := l.ExecuteCommands(commands)
-	l.ExtractPingResult(dstIps, output)
+	output := l.Node.ExecuteCommands(commands)
+	return l.Node.ExtractPingResult(dstIps, output)
 
 }
 
 type Arista struct {
-	Node
+	Node *Node
 }
 
+func (a Arista) GetDestIps() []string {
+	return a.Node.DestIps
+}
 
-func (a *Arista) DoPing(dstIps []string) {
+func (a Arista) GetSourceIp() string {
+	return a.Node.IpAddress
+}
+
+func (a *Arista) DoPing(dstIps []string) map[string]bool {
 	commands := []string{}
 	for _, ip := range dstIps {
 		commands = append(commands, fmt.Sprintf("ping %s", ip))
 	}
-	output := a.ExecuteCommands(commands)
-	a.ExtractPingResult(dstIps, output)
+	output := a.Node.ExecuteCommands(commands)
+	return a.Node.ExtractPingResult(dstIps, output)
 }
 
 type Cisco struct {
-	Node
+	Node *Node
 }
 
-func (c *Cisco) DoPing(dstIps []string) {
+func (c Cisco) GetDestIps() []string {
+	return c.Node.DestIps
+}
+
+func (c Cisco) GetSourceIp() string {
+	return c.Node.IpAddress
+}
+
+func (c *Cisco) DoPing(dstIps []string) map[string]bool {
 	commands := []string{}
 	for _, ip := range dstIps {
 		commands = append(commands, fmt.Sprintf("ping %s", ip))
 	}
-	output := c.ExecuteCommands(commands)
-	c.ExtractPingResult(dstIps, output)
+	output := c.Node.ExecuteCommands(commands)
+	return c.ExtractPingResult(dstIps, output)
 }
 
-
-func (c *Cisco) ExtractPingResult(dstIps []string, output string) {
+func (c *Cisco) ExtractPingResult(dstIps []string, output string) map[string]bool {
 	data := strings.Split(output, "Echos")
 	ipRegex := regexp.MustCompile(`((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9]),`)
 	pingResultRegex := regexp.MustCompile(`(\d{1,3})\spercent\s\(`)
@@ -211,12 +272,11 @@ func (c *Cisco) ExtractPingResult(dstIps []string, output string) {
 		if len(pingResult) == 0 {
 			continue
 		}
-		// fmt.Printf("|%s|\n%s", pingResult, ip)
 		if pingResult[1] == "0" {
 			resultMap[ip] = false
 		} else {
 			resultMap[ip] = true
 		}
 	}
-	c.Result = resultMap
+	return resultMap
 }
