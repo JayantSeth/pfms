@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -23,7 +24,7 @@ type Node struct {
 	Result    map[string]bool
 }
 
-func (n Node) ExecuteCommands(commands []string) string {
+func (n Node) ExecuteCommands(commands []string, readWait int) (string, error) {
 	Ciphers := ssh.InsecureAlgorithms().Ciphers
 	Ciphers = append(Ciphers, ssh.SupportedAlgorithms().Ciphers...)
 	KeyExchanges := ssh.InsecureAlgorithms().KeyExchanges
@@ -52,28 +53,31 @@ func (n Node) ExecuteCommands(commands []string) string {
 
 	client, err := ssh.Dial("tcp", n.IpAddress+":"+n.Port, config)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to connect to host: %v on port 22, error: %v, Username: %v, Password: %v", n.IpAddress, err, n.Username, n.Password)
-		return msg
+		msg := fmt.Sprintf("\nFailed to connect to host: %s on port 22, error: %s\n", n.IpAddress, err.Error())
+		return "", errors.New(msg)
 	}
 	defer client.Close()
 
 	session, err := client.NewSession()
 	if err != nil {
 		msg := fmt.Sprintf("Failed to create a session with client: %v", err.Error())
-		return msg
+		return "", errors.New(msg)
 	}
 	defer session.Close()
 	stdin, err := session.StdinPipe()
 	if err != nil {
-		log.Fatalf("Unable to setup stdin for session: %v", err)
+		msg := fmt.Sprintf("Unable to setup stdin for session: %v", err.Error())
+		return "", errors.New(msg)
 	}
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		log.Fatalf("Unable to setup stdout for session: %v", err)
+		msg := fmt.Sprintf("Unable to setup stdout for session: %v", err.Error())
+		return "", errors.New(msg)
 	}
 	stderr, err := session.StderrPipe()
 	if err != nil {
-		log.Fatalf("Unable to setup stderr for session: %v", err)
+		msg := fmt.Sprintf("Unable to setup stderr for session: %v", err.Error())
+		return "", errors.New(msg)
 	}
 
 	output := ""
@@ -110,7 +114,7 @@ func (n Node) ExecuteCommands(commands []string) string {
 			break
 		}
 		writer.Flush()
-		time.Sleep(6 * time.Second)
+		time.Sleep(time.Duration(readWait) * time.Second)
 	}
 
 	// Close stdin to signal end of input
@@ -118,39 +122,34 @@ func (n Node) ExecuteCommands(commands []string) string {
 
 	// Wait for the session to finish (optional, depending on your needs)
 	session.Wait()
-	return output
+	return output, nil
 }
 
 func (n Node) GetSourceIp() string {
 	return n.IpAddress
 }
 
-func (n Node) GetDestIps() []string {
-	return n.DestIps
-}
-
 type Operations interface {
-	DoPing(dstIps []string) map[string]bool
+	DoPing() (map[string]bool, error)
 	GetSourceIp() string
-	GetDestIps() []string
 }
 
 type Linux struct {
 	Node *Node
 }
 
-func (l Linux) GetDestIps() []string {
-	return l.Node.DestIps
-}
-
 func (l Linux) GetSourceIp() string {
 	return l.Node.IpAddress
 }
 
-func DoPingCh (o Operations, dstIps []string, ch chan Result, wg *sync.WaitGroup) {
+func DoPingCh (o Operations, ch chan Result, wg *sync.WaitGroup) {
 	defer wg.Done()
-	result := o.DoPing(dstIps)
-	ch <- Result{IpAddress: o.GetSourceIp(), Result: result}	
+	result, err := o.DoPing()
+	if err != nil {
+		ch <- Result{IpAddress: fmt.Sprintf("%s %s", o.GetSourceIp(), err.Error()), Result: result}
+	} else {
+		ch <- Result{IpAddress: o.GetSourceIp(), Result: result}	
+	}
 }
 
 type Result struct {
@@ -163,7 +162,7 @@ func DoMultiplePing(ons []Operations) map[string]map[string]bool {
 	var wg sync.WaitGroup
 	for _, o := range ons {
 		wg.Add(1)
-		go DoPingCh(o, o.GetDestIps(), ch, &wg)
+		go DoPingCh(o, ch, &wg)
 	}
 
 	go func() {
@@ -179,12 +178,12 @@ func DoMultiplePing(ons []Operations) map[string]map[string]bool {
 }
 
 
-func (n *Node) ExtractPingResult(dstIps []string, output string) map[string]bool {
+func (n *Node) ExtractPingResult(output string) map[string]bool {
 	data := strings.Split(output, "PING")
 	ipRegex := regexp.MustCompile(`((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])`)
 	pingResultRegex := regexp.MustCompile(`(\d{1,3})%\spacket\sloss,`)
 	resultMap := make(map[string]bool)
-	for _, ip := range dstIps {
+	for _, ip := range n.DestIps {
 		resultMap[ip] = false
 	}
 	for _, data := range data {
@@ -202,13 +201,17 @@ func (n *Node) ExtractPingResult(dstIps []string, output string) map[string]bool
 	return resultMap
 }
 
-func (l *Linux) DoPing(dstIps []string) map[string]bool {
+func (l *Linux) DoPing() (map[string]bool, error) {
 	commands := []string{}
-	for _, ip := range dstIps {
+	for _, ip := range l.Node.DestIps {
 		commands = append(commands, fmt.Sprintf("ping %s -c 3", ip))
 	}
-	output := l.Node.ExecuteCommands(commands)
-	return l.Node.ExtractPingResult(dstIps, output)
+	output, err := l.Node.ExecuteCommands(commands, 1)	
+	if err != nil {
+		map1 := make(map[string]bool)
+		return map1, err
+	}
+	return l.Node.ExtractPingResult(output), nil
 
 }
 
@@ -216,50 +219,50 @@ type Arista struct {
 	Node *Node
 }
 
-func (a Arista) GetDestIps() []string {
-	return a.Node.DestIps
-}
-
 func (a Arista) GetSourceIp() string {
 	return a.Node.IpAddress
 }
 
-func (a *Arista) DoPing(dstIps []string) map[string]bool {
-	commands := []string{}
-	for _, ip := range dstIps {
-		commands = append(commands, fmt.Sprintf("ping %s", ip))
+func (a *Arista) DoPing() (map[string]bool, error) {
+	commands := []string{"en"}
+	for _, ip := range a.Node.DestIps {
+		commands = append(commands, fmt.Sprintf("ping %s repeat 3", ip))
 	}
-	output := a.Node.ExecuteCommands(commands)
-	return a.Node.ExtractPingResult(dstIps, output)
+	output, err := a.Node.ExecuteCommands(commands, 1)
+	if err != nil {
+		map1 := make(map[string]bool)
+		return map1, err
+	}
+	return a.Node.ExtractPingResult(output), nil
 }
 
 type Cisco struct {
 	Node *Node
 }
 
-func (c Cisco) GetDestIps() []string {
-	return c.Node.DestIps
-}
-
 func (c Cisco) GetSourceIp() string {
 	return c.Node.IpAddress
 }
 
-func (c *Cisco) DoPing(dstIps []string) map[string]bool {
+func (c *Cisco) DoPing() (map[string]bool, error) {
 	commands := []string{}
-	for _, ip := range dstIps {
-		commands = append(commands, fmt.Sprintf("ping %s", ip))
+	for _, ip := range c.Node.DestIps {
+		commands = append(commands, fmt.Sprintf("ping %s timeout 1 r 3", ip))
 	}
-	output := c.Node.ExecuteCommands(commands)
-	return c.ExtractPingResult(dstIps, output)
+	output, err := c.Node.ExecuteCommands(commands, 3)
+	if err != nil {
+		map1 := make(map[string]bool)
+		return map1, err
+	}
+	return c.ExtractPingResult(output), nil
 }
 
-func (c *Cisco) ExtractPingResult(dstIps []string, output string) map[string]bool {
+func (c *Cisco) ExtractPingResult(output string) map[string]bool {
 	data := strings.Split(output, "Echos")
 	ipRegex := regexp.MustCompile(`((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9]),`)
 	pingResultRegex := regexp.MustCompile(`(\d{1,3})\spercent\s\(`)
 	resultMap := make(map[string]bool)
-	for _, ip := range dstIps {
+	for _, ip := range c.Node.DestIps {
 		resultMap[ip] = false
 	}
 	for _, data := range data {
