@@ -15,3 +15,8 @@ All you need to do it enter the data in data.yaml and run the app
 4. Enter the required data in `data.yaml`
 5. Run the app with `go run .`
 
+
+## Supported Devices
+1. Linux
+2. Arista EOS
+3. Cisco IOS
