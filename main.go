@@ -19,12 +19,10 @@ type Data struct {
 }
 
 const (
-	Red = "\033[31m"
+	Red   = "\033[31m"
 	Green = "\033[32m"
 	Reset = "\033[0m"
 )
-
-
 
 func main() {
 	start_time := time.Now()
@@ -66,21 +64,29 @@ func main() {
 
 	basic_html := report.GenBasicStructure()
 	tables := ""
-	for SourceIp,Result := range result {
+	for SourceIp, Result := range result {
+		fmt.Printf("From Source IP: %s\n", SourceIp)
 		node := srcIpToNodeMap[SourceIp]
 		table := report.GenTable(node)
 		rows := ""
-		for DstIp, Reachable := range Result {
-			row := report.GenRow(DstIp, Reachable)
-			if (Reachable) {
-				fmt.Printf("\tDestination IP: %s is %sreachable%s\n",DstIp, Green, Reset)
-			} else {
-				fmt.Printf("\tDestination IP: %s is %snot reachable%s\n",DstIp, Red, Reset)
+		if len(Result.Error) != 0 {
+			fmt.Printf("\t%s %s %s\n", Red, Result.Error, Reset)
+			errHtml := report.GenError(Result.Error)
+			table = strings.Replace(table, "ROWS_PLACEHOLDER", errHtml, 1)
+			tables = fmt.Sprintf("%s%s", tables, table)
+		} else {
+			for DstIp, Reachable := range Result.Result {
+				row := report.GenRow(DstIp, Reachable)
+				if Reachable {
+					fmt.Printf("\tDestination IP: %s is %sreachable%s\n", DstIp, Green, Reset)
+				} else {
+					fmt.Printf("\tDestination IP: %s is %snot reachable%s\n", DstIp, Red, Reset)
+				}
+				rows = fmt.Sprintf(`%s%s`, rows, row)
 			}
-			rows = fmt.Sprintf(`%s%s`, rows, row)
+			table = strings.Replace(table, "ROWS_PLACEHOLDER", rows, 1)
+			tables = fmt.Sprintf("%s%s", tables, table)
 		}
-		table = strings.Replace(table, "ROWS_PLACEHOLDER", rows, 1)
-		tables = fmt.Sprintf("%s%s", tables, table)
 		fmt.Printf("=================================================\n")
 	}
 	complete_html := strings.Replace(basic_html, "PLACEHOLDER", tables, 1)

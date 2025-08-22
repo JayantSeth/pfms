@@ -71,7 +71,6 @@ func GenTable(n utils.Node) string {
 	return table
 }
 
-
 func GenRow(ip string, result bool) string {
 	rString := `<td class="px-6 py-4">
 	<span class="relative flex size-3">
@@ -109,4 +108,14 @@ class="bg-white border-b dark:bg-gray-800 dark:border-gray-700 border-gray-200"
 </tr>
 	`, ip, rString)
 	return row
+}
+
+func GenError(err string) string {
+	errHtml := fmt.Sprintf(`
+        <div class="bg-red-200 p-4 text-center rounded-lg text-red-900 m-4">
+          <p>%s</p>
+        </div>
+  
+  `, err)
+	return errHtml
 }
