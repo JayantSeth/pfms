@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/JayantSeth/pfms/report"
 	"github.com/JayantSeth/pfms/utils"
-	"gopkg.in/yaml.v3"
+
 	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
 )
 
 type Data struct {
@@ -16,11 +19,10 @@ type Data struct {
 }
 
 const (
-	Red = "\033[31m"
+	Red   = "\033[31m"
 	Green = "\033[32m"
 	Reset = "\033[0m"
 )
-
 
 func main() {
 	start_time := time.Now()
@@ -40,7 +42,9 @@ func main() {
 	}
 
 	var ops []utils.Operations
+	srcIpToNodeMap := map[string]utils.Node{}
 	for _, n := range data.Nodes {
+		srcIpToNodeMap[n.IpAddress] = n
 		switch n.Type {
 		case "linux":
 			linux := utils.Linux{Node: n}
@@ -57,19 +61,39 @@ func main() {
 		}
 	}
 	result := utils.DoMultiplePing(ops)
-	
-	for SourceIp,Result := range result {
+
+	basic_html := report.GenBasicStructure()
+	tables := ""
+	for SourceIp, Result := range result {
 		fmt.Printf("From Source IP: %s\n", SourceIp)
-		for DstIp, Reachable := range Result {
-			if (Reachable) {
-				fmt.Printf("\tDestination IP: %s is %sreachable%s\n",DstIp, Green, Reset)
-			} else {
-				fmt.Printf("\tDestination IP: %s is %snot reachable%s\n",DstIp, Red, Reset)
+		node := srcIpToNodeMap[SourceIp]
+		table := report.GenTable(node)
+		rows := ""
+		if len(Result.Error) != 0 {
+			fmt.Printf("\t%s %s %s\n", Red, Result.Error, Reset)
+			errHtml := report.GenError(Result.Error)
+			table = strings.Replace(table, "ROWS_PLACEHOLDER", errHtml, 1)
+			tables = fmt.Sprintf("%s%s", tables, table)
+		} else {
+			for DstIp, Reachable := range Result.Result {
+				row := report.GenRow(DstIp, Reachable)
+				if Reachable {
+					fmt.Printf("\tDestination IP: %s is %sreachable%s\n", DstIp, Green, Reset)
+				} else {
+					fmt.Printf("\tDestination IP: %s is %snot reachable%s\n", DstIp, Red, Reset)
+				}
+				rows = fmt.Sprintf(`%s%s`, rows, row)
 			}
+			table = strings.Replace(table, "ROWS_PLACEHOLDER", rows, 1)
+			tables = fmt.Sprintf("%s%s", tables, table)
 		}
 		fmt.Printf("=================================================\n")
 	}
+	complete_html := strings.Replace(basic_html, "PLACEHOLDER", tables, 1)
+	file, err := os.Create("index.html")
+	if err != nil {
+		log.Fatalf("Unable to open file: %s\n", err.Error())
+	}
+	file.WriteString(complete_html)
 	fmt.Printf("Time taken: %v\n", time.Since(start_time))
 }
-
-// OOPs, concurrency & parallelism

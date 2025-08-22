@@ -145,18 +145,19 @@ func DoPingCh (o Operations, ch chan Result, wg *sync.WaitGroup) {
 	defer wg.Done()
 	result, err := o.DoPing()
 	if err != nil {
-		ch <- Result{IpAddress: fmt.Sprintf("%s %s", o.GetSourceIp(), err.Error()), Result: result}
+		ch <- Result{IpAddress: o.GetSourceIp(), Result: result, Error: err.Error()}
 	} else {
-		ch <- Result{IpAddress: o.GetSourceIp(), Result: result}	
+		ch <- Result{IpAddress: o.GetSourceIp(), Result: result, Error: ""}	
 	}
 }
 
 type Result struct {
 	IpAddress string
 	Result map[string]bool
+	Error string
 }
 
-func DoMultiplePing(ons []Operations) map[string]map[string]bool {
+func DoMultiplePing(ons []Operations) map[string]Result {
 	ch := make(chan Result)
 	var wg sync.WaitGroup
 	for _, o := range ons {
@@ -169,9 +170,9 @@ func DoMultiplePing(ons []Operations) map[string]map[string]bool {
 		close(ch)
 	}()
 
-	result := make(map[string]map[string]bool)
+	result := make(map[string]Result)
 	for r := range ch {
-		result[r.IpAddress] = r.Result
+		result[r.IpAddress] = r
 	}
 	return result
 }

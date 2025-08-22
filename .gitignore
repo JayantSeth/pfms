@@ -26,7 +26,10 @@ go.work.sum
 
 # env file
 .env
-
+question.go
 # Editor/IDE
 # .idea/
 # .vscode/
+index.html
+pfms-linux-amd64
+pfms-mac-amd64

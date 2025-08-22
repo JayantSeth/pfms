@@ -15,6 +15,7 @@ All you need to do it enter the data in data.yaml and run the app
 4. Enter the required data in `data.yaml`
 5. Run the app with `go run .`
 
+* A index.html file will be generated with the detailed report 
 
 ## Supported Devices
 1. Linux
