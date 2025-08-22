@@ -17,6 +17,20 @@ All you need to do it enter the data in data.yaml and run the app
 
 * A index.html file will be generated with the detailed report 
 
+## How to use Guide
+
+Download the following from Release section of the latest release:
+1. Executable pfms-linux-amd64, pfms-mac-amd64 or pfms-windows-amd64.exe based on your OS
+2. data.yaml file 
+
+Update the data.yaml based on your requirement
+
+Run the executable
+
+index.html will be generated with the ping result
+
+* following OS are support: Windows, Linux & MAC amd64 architecture based
+
 ## Supported Devices
 1. Linux
 2. Arista EOS
